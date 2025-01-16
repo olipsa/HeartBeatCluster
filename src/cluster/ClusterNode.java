@@ -1,9 +1,6 @@
 package cluster;
 
-import service.AddNumbersService;
-import service.CheckEvenService;
-import service.Service;
-import service.UpperCaseService;
+import service.*;
 
 
 import java.io.IOException;
@@ -31,29 +28,29 @@ public class ClusterNode {
     private static final List<Service> ALL_SERVICES = Arrays.asList(
             new Service("1", "adunare", "1.0", Arrays.asList("int", "int"), Arrays.asList("int"), new AddNumbersService()),
             new Service("2", "paritate", "2.1", Arrays.asList("int"), Arrays.asList("boolean"), new CheckEvenService()),
-            new Service("3", "toUpper", "1.0", Arrays.asList("string"), Arrays.asList("string"), new UpperCaseService())
+            new Service("3", "toUpper", "1.0", Arrays.asList("string"), Arrays.asList("string"), new UpperCaseService()),
+            new Service("4", "repeatString", "1.0", Arrays.asList("string", "int"), Arrays.asList("string"), new RepeatStringService())
     );
 
 
     public static void main(String[] args) throws IOException {
-        if(args.length<1){
+        if (args.length < 1) {
             System.err.println("EROARE: Portul TCP nu a fost introdus ca argument");
             return;
         }
 
-        try{
+        try {
             tcpPort = Integer.parseInt(args[0]);
-        }catch (NumberFormatException e){
+        } catch (NumberFormatException e) {
             System.err.println("EROARE: Portul TCP trebuie sa fie un numar valid");
             return;
         }
 
         ServerSocket serverSocket = null;
-        try{
+        try {
             serverSocket = new ServerSocket(tcpPort);
             System.out.println("Nodul asculta pe portul TCP: " + tcpPort);
-        }
-        catch (BindException e){
+        } catch (BindException e) {
             System.err.println("EROARE: Portul TCP este deja folosit");
             return;
         }
@@ -100,8 +97,7 @@ public class ClusterNode {
                 }
             } catch (IOException e) {
                 throw new RuntimeException(e);
-            }
-            finally {
+            } finally {
                 datagramSocket.close();
                 try {
                     finalServerSocket.close();
@@ -109,7 +105,8 @@ public class ClusterNode {
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
-                multicastSocket.close();}
+                multicastSocket.close();
+            }
         }).start();
 
         // Thread de actualizare a topologiei
@@ -140,6 +137,8 @@ public class ClusterNode {
                 try {
                     Socket clientSocket = finalServerSocket.accept();
                     handleClient(clientSocket);
+                } catch (SocketException e) {
+                    System.err.println("Clientul s-a deconectat");
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 } catch (ClassNotFoundException e) {
@@ -150,13 +149,13 @@ public class ClusterNode {
     }
 
     private static List<Service> generateRandomServices() {
-        Random random= new Random();
-        int numServices = random.nextInt(ALL_SERVICES.size())+1;
+        Random random = new Random();
+        int numServices = random.nextInt(ALL_SERVICES.size()) + 1;
 
         List<Service> shuffledServices = new ArrayList<>(ALL_SERVICES);
         Collections.shuffle(shuffledServices);
 
-        return shuffledServices.subList(0,numServices);
+        return shuffledServices.subList(0, numServices);
     }
 
     private static void handleHeartbeatReceive() throws IOException {
@@ -192,24 +191,24 @@ public class ClusterNode {
 
 
     private static void handleClient(Socket clientSocket) throws IOException, ClassNotFoundException {
-        try{
+        try {
             ObjectOutputStream out = new ObjectOutputStream(clientSocket.getOutputStream());
             ObjectInputStream in = new ObjectInputStream(clientSocket.getInputStream());
 
-            System.out.println("Client conectat: " + clientSocket.getInetAddress()+":"+clientSocket.getLocalPort());
+            System.out.println("Client conectat: " + clientSocket.getInetAddress() + ":" + clientSocket.getLocalPort());
 
             // Citim tipul cererii
             String requestType = (String) in.readObject();
-            System.out.println("Am primit request "+requestType);
-            switch (requestType){
+            System.out.println("Am primit request " + requestType);
+            switch (requestType) {
                 case "get_topology":
                     // Trimiterea nodurilor active catre client
                     out.writeObject(new ArrayList<>(topology.values()));
                     out.flush();
                     requestType = (String) in.readObject();
-                    switch (requestType){
+                    switch (requestType) {
                         case "close":
-                            System.out.println("Client deconectat: " + clientSocket.getInetAddress()+":"+clientSocket.getLocalPort());
+                            System.out.println("Client deconectat: " + clientSocket.getInetAddress() + ":" + clientSocket.getLocalPort());
                             clientSocket.close();
                             break;
                         case "execute_service":
@@ -230,7 +229,9 @@ public class ClusterNode {
                     out.writeObject("Eroare: Tip cerere necunoscut.");
                     out.flush();
             }
-        }catch (Exception e){
+        } catch (SocketException e) {
+            System.err.println("Clientul s-a deconectat");
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
@@ -239,7 +240,7 @@ public class ClusterNode {
         String selectedNodeId = (String) in.readObject();
         String serviceId = (String) in.readObject();
         String parameters = (String) in.readObject();
-        List<String> parameterList = Arrays.asList(parameters.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)"));
+        List<String> parameterList = Arrays.asList(parameters.replaceAll("\\s+(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", "").split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)"));
 
         NodeInfo selectedNode = topology.get(selectedNodeId);
         if (selectedNode == null) {
@@ -260,20 +261,70 @@ public class ClusterNode {
         serviceExecutor.submit(() -> {
             try {
                 System.out.println("Execut serviciul: " + selectedService.get().getName() +
-                        " cu parametrii de intrare "+ parameters);
+                        " cu parametrii de intrare " + parameters);
 
-                String result = selectedService.get().execute(parameterList);
+                String clientResponse = validateParameters(selectedService.get(), parameterList);
+                if (!clientResponse.isEmpty()) {
+                    System.out.println("Parametrii invalizi de intrare\n" + clientResponse);
+                    out.writeObject(clientResponse);
+                    out.flush();
+                } else {
+                    System.out.println("Parametrii de intrare validati\n");
+                    String result = selectedService.get().execute(parameterList);
 
-                out.writeObject("Serviciul de " + selectedService.get().getName() +
-                        " cu parametrii de intrare ["+parameters + "] a fost executat cu succes."+
-                        "\nRezultat: "+result);
-                out.flush();
+                    out.writeObject("Serviciul de " + selectedService.get().getName() +
+                            " cu parametrii de intrare [" + parameters + "] a fost executat cu succes." +
+                            "\nRezultat: " + result);
+                    out.flush();
+                }
                 System.out.println("Raspuns trimis catre client.");
             } catch (Exception e) {
-                System.err.println("[" + new Date() + "] Eroare în HeartbeatReceiver:");
                 e.printStackTrace();
             }
         });
     }
+
+    private static String validateParameters(Service service, List<String> parameters) {
+        List<String> expectedTypes = service.getInputParams();
+        String clientResponse = "";
+
+        // Verificare numar parametrii
+        if (parameters.size() != expectedTypes.size()) {
+            return "Eroare: Numarul de parametrii introdus nu este corect. Serviciul necesita ca input un numar de " + expectedTypes.size() + " parametrii de intrare.\n";
+        }
+
+        // Verificare tip parametru
+        StringBuilder clientResponseBuilder = new StringBuilder(clientResponse);
+        for (int i = 0; i < parameters.size(); i++) {
+            String param = parameters.get(i);
+            String expectedType = expectedTypes.get(i);
+
+            try {
+                switch (expectedType) {
+                    case "int":
+                        Integer.parseInt(param);
+                        break;
+                    case "boolean":
+                        if (!param.equalsIgnoreCase("true") && !param.equalsIgnoreCase("false")) {
+                            clientResponseBuilder.append("Eroare: Parametrul \"").append(param).append("\" nu este de tip ").append(expectedType).append("\n");
+                        }
+                        break;
+                    case "string":
+                        if (param == null || param.isEmpty() || !(param.startsWith("\"") && param.endsWith("\""))) {
+                            clientResponseBuilder.append("Eroare: Parametrul \"").append(param).append("\" nu este un string valid.\n");
+                        }
+                        break;
+                    default:
+                        System.err.println("Eroare: Tip necunoscut: " + expectedType);
+                        System.exit(1);
+                }
+            } catch (NumberFormatException e) {
+                clientResponseBuilder.append("Eroare: Parametrul \"").append(param).append("\" nu este de tip ").append(expectedType).append("\n");
+            }
+        }
+        clientResponse = clientResponseBuilder.toString();
+        return clientResponse;
+    }
+
 }
 

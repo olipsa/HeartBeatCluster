@@ -103,7 +103,7 @@ public class ClusterClient {
                             }
                         }
                         scanner.nextLine();
-                        System.out.print("Introduceti parametrul/parametrii de intrare pentru serviciu (separati prin spatiu, cu variabilele string intre \"): ");
+                        System.out.print("Introduceti parametrul/parametrii de intrare pentru serviciu (separati prin virgula, iar pentru variabilele string intre \"\"): ");
                         String parameters = scanner.nextLine(); // validam parametrii pe server
 
                         // Trimite selectia la noul nod
@@ -149,7 +149,7 @@ public class ClusterClient {
                         }
                     }
                     scanner.nextLine();
-                    System.out.print("Introduceti parametrul/parametrii de intrare pentru serviciu (separati prin spatiu, cu variabilele string intre \"): ");
+                    System.out.print("Introduceti parametrul/parametrii de intrare pentru serviciu (separati prin virgula, iar pentru variabilele string intre \"\"): ");
                     String parameters = scanner.nextLine();
 
                     // Trimite direct selecția la nodul initial, deoarece suntem deja conectati la el
@@ -172,9 +172,8 @@ public class ClusterClient {
                 System.out.println("EROARE: Nodul "+clusterNodeAddr+":"+clusterNodePort+" din cluster nu este activ");
             }
             catch(IOException e){
-                System.err.println("EROARE: Conexiunea nu s-a realizat cu " + clusterNodeAddr + " pe portul " + clusterNodePort);
-                e.printStackTrace();
-                return;
+                isPortSelected = false;
+                System.out.println("EROARE: Nodul "+clusterNodeAddr+":"+clusterNodePort+" din cluster nu este activ");
             }
             catch (ClassNotFoundException e){
                 System.err.println("EROARE: " + e.getMessage());

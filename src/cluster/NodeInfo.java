@@ -38,8 +38,8 @@ public class NodeInfo  implements Serializable {
                 String uid = serviceParts[0].split("=")[1];
                 String name = serviceParts[1].split("=")[1];
                 String version = serviceParts[2].split("=")[1];
-                List<String> inputs = Arrays.asList(serviceParts[3].split("=")[1].split(","));
-                List<String> returns = Arrays.asList(serviceParts[4].split("=")[1].split(","));
+                List<String> inputs = Arrays.asList(serviceParts[3].split("=")[1].split(":"));
+                List<String> returns = Arrays.asList(serviceParts[4].split("=")[1].split(":"));
 
                 ExecutableService nodeService = null;
                 switch (name){
@@ -51,6 +51,11 @@ public class NodeInfo  implements Serializable {
                         break;
                     case "toUpper":
                         nodeService = new UpperCaseService();
+                        break;
+                    case "repeatString":
+                        nodeService = new RepeatStringService();
+                        break;
+                    default:
                         break;
                 }
                 serviceList.add(new Service(uid, name, version, inputs, returns, nodeService));
